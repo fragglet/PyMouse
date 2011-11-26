@@ -17,6 +17,7 @@
 from Quartz import *
 from AppKit import NSEvent
 from base import PyMouseMeta, PyMouseEventMeta
+from time import time
 
 pressID = [None, kCGEventLeftMouseDown, kCGEventRightMouseDown, kCGEventOtherMouseDown]
 releaseID = [None, kCGEventLeftMouseUp, kCGEventRightMouseUp, kCGEventOtherMouseUp]
@@ -27,18 +28,53 @@ class PyMouse(PyMouseMeta):
     def __init__(self, *args):
         PyMouseMeta.__init__(self, *args)
         self.buttondown = [ False, False, False, False ]
+        self.last_click_button = None
+        self.last_click_time = 0
+        self.last_click_count = 0
+
+    def _double_click_time(self):
+        # TODO: Read system setting for double click time.
+        return 0.5
 
     def press(self, x, y, button = 1):
+
         event = CGEventCreateMouseEvent(None, pressID[button], (x, y), button - 1)
+
+        # Detect double/triple clicks:
+
+        now = time()
+
+        if button != self.last_click_button \
+           or (now - self.last_click_time) > self._double_click_time():
+           self.last_click_count = 0
+
+        self.last_click_count += 1
+
+        # Set number-of-clicks field:
+
+        CGEventSetIntegerValueField(event, kCGMouseEventClickState,
+                                    self.last_click_count)
+
         CGEventPost(kCGHIDEventTap, event)
+
         self.buttondown[button] = True
+        self.last_click_time = now
+        self.last_click_button = button
 
     def release(self, x, y, button = 1):
+
         event = CGEventCreateMouseEvent(None, releaseID[button], (x, y), button - 1)
+        CGEventSetIntegerValueField(event, kCGMouseEventClickState,
+                                    self.last_click_count)
+
         CGEventPost(kCGHIDEventTap, event)
         self.buttondown[button] = False
 
     def move(self, x, y):
+
+	# Double click is invalid if the mouse moves:
+	self.last_click_time = 0
+
         if True in self.buttondown:
             button = self.buttondown.index(True)
             event_type = dragID[button]
